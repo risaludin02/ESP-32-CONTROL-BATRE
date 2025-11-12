@@ -12,14 +12,11 @@
       color: #222;
       margin: 20px;
     }
-    h2 {
-      text-align: center;
-      margin-bottom: 20px;
-    }
+    h2 { text-align: center; margin-bottom: 20px; }
     .card {
       background: #fff;
       border-radius: 12px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
       padding: 15px;
       margin-bottom: 15px;
     }
@@ -44,6 +41,31 @@
       overflow-y: auto;
     }
     #status { font-weight: bold; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      text-align: center;
+    }
+    .statusBox {
+      background: #eef3f8;
+      border-radius: 8px;
+      padding: 10px;
+      font-weight: bold;
+    }
+    .battery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(100px,1fr));
+      gap: 10px;
+      text-align: center;
+      margin-top: 10px;
+    }
+    .batteryBox {
+      background: #eef3f8;
+      border-radius: 8px;
+      padding: 8px;
+      font-weight: bold;
+    }
   </style>
 </head>
 
@@ -66,9 +88,23 @@
   </div>
 
   <div class="card">
-    <strong>Status PLN (dari Nano)</strong><br>
-    <div id="plnStatus" style="font-size:1.2em;font-weight:bold;color:#555;">
-      Menunggu data...
+    <strong>Status Sistem</strong>
+    <div class="grid">
+      <div class="statusBox" id="plnStatus">PLN: --</div>
+      <div class="statusBox" id="dcStatus">DISCHARGE: --</div>
+      <div class="statusBox" id="chStatus">CHARGER: --</div>
+      <div class="statusBox" id="veVolt">VE: -- V</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>Level Tiap Baterai (Volt)</strong>
+    <div class="battery-grid">
+      <div class="batteryBox" id="voltA">VA: -- V</div>
+      <div class="batteryBox" id="voltB">VB: -- V</div>
+      <div class="batteryBox" id="voltC">VC: -- V</div>
+      <div class="batteryBox" id="voltD">VD: -- V</div>
+      <div class="batteryBox" id="voltE">VE: -- V</div>
     </div>
   </div>
 
@@ -78,7 +114,7 @@
   </div>
 
 <script>
-  // ====== Konfigurasi koneksi MQTT (HiveMQ TLS) ======
+  // ====== MQTT HiveMQ Secure ======
   const brokerUrl = "wss://broker.hivemq.com:8884/mqtt";
   const cid = "web-" + Math.random().toString(16).substr(2, 8);
   document.getElementById("cid").textContent = cid;
@@ -87,12 +123,21 @@
 
   const statusEl = document.getElementById("status");
   const teleEl = document.getElementById("tele");
-  const plnEl = document.getElementById("plnStatus");
 
-  client.on("connect", function () {
+  const plnEl = document.getElementById("plnStatus");
+  const dcEl  = document.getElementById("dcStatus");
+  const chEl  = document.getElementById("chStatus");
+  const veEl  = document.getElementById("veVolt");
+
+  const vAEl = document.getElementById("voltA");
+  const vBEl = document.getElementById("voltB");
+  const vCEl = document.getElementById("voltC");
+  const vDEl = document.getElementById("voltD");
+  const vEEl = document.getElementById("voltE");
+
+  client.on("connect", () => {
     statusEl.textContent = "connected";
     statusEl.style.color = "green";
-    // subscribe semua telemetry dari ESP32
     client.subscribe("esp32/tele/#");
     client.subscribe("esp32/ack/#");
   });
@@ -111,14 +156,13 @@
     statusEl.style.color = "red";
   });
 
-  // tampilkan pesan masuk
-  client.on("message", function (topic, payload) {
+  // ====== Menerima pesan ======
+  client.on("message", (topic, payload) => {
     const msg = payload.toString();
     const time = new Date().toLocaleTimeString();
-    teleEl.innerHTML =
-      `<div>[${time}] ${topic} → ${msg}</div>` + teleEl.innerHTML;
+    teleEl.innerHTML = `<div>[${time}] ${topic} → ${msg}</div>` + teleEl.innerHTML;
 
-    // update status PLN otomatis dari Nano (telemetri)
+    // PLN
     if (topic === "esp32/tele/PLN") {
       if (msg === "1" || msg.toUpperCase() === "ON") {
         plnEl.textContent = "PLN: ON";
@@ -128,26 +172,48 @@
         plnEl.style.color = "red";
       }
     }
+
+    // DC & CH
+    if (topic === "esp32/tele/DC") {
+      dcEl.textContent = "DISCHARGE: " + msg;
+      dcEl.style.color = msg != "0" ? "green" : "#555";
+    }
+    if (topic === "esp32/tele/CH") {
+      chEl.textContent = "CHARGER: " + msg;
+      chEl.style.color = msg != "0" ? "blue" : "#555";
+    }
+
+    // Voltase baterai A–E
+    if (topic === "esp32/tele/V0") updateVolt(vAEl, "VA", msg);
+    if (topic === "esp32/tele/V1") updateVolt(vBEl, "VB", msg);
+    if (topic === "esp32/tele/V2") updateVolt(vCEl, "VC", msg);
+    if (topic === "esp32/tele/V3") updateVolt(vDEl, "VD", msg);
+    if (topic === "esp32/tele/V4") {
+      updateVolt(vEEl, "VE", msg);
+      veEl.textContent = "VE: " + parseFloat(msg).toFixed(2) + " V";
+      veEl.style.color = "#333";
+    }
   });
 
-  // ====== Fungsi publish ke topic kontrol ======
+  // ====== Fungsi pewarnaan voltase ======
+  function updateVolt(el, label, val) {
+    const v = parseFloat(val);
+    el.textContent = `${label}: ${v.toFixed(2)} V`;
+    if (v >= 12.5) el.style.color = "green";
+    else if (v >= 11.8) el.style.color = "orange";
+    else el.style.color = "red";
+  }
+
+  // ====== Fungsi publish kontrol ======
   function publishCmd(sub, payload) {
     client.publish("esp32/cmd/" + sub, payload.toString());
   }
 
   // ====== Tombol kontrol ======
-  document.getElementById("pb1_on").addEventListener("click", () => {
-    publishCmd("V5", "1"); // PB1_ON
-  });
-  document.getElementById("pb1_off").addEventListener("click", () => {
-    publishCmd("V5", "0"); // PB1_OFF
-  });
-  document.getElementById("pb2").addEventListener("click", () => {
-    publishCmd("V7", "1"); // PB2_ON
-  });
-  document.getElementById("pb3").addEventListener("click", () => {
-    publishCmd("V6", "1"); // PB3_ON
-  });
+  document.getElementById("pb1_on").addEventListener("click", () => publishCmd("V5", "1"));
+  document.getElementById("pb1_off").addEventListener("click", () => publishCmd("V5", "0"));
+  document.getElementById("pb2").addEventListener("click", () => publishCmd("V7", "1"));
+  document.getElementById("pb3").addEventListener("click", () => publishCmd("V6", "1"));
 </script>
 </body>
 </html>
