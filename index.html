@@ -1,99 +1,153 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="id">
 <head>
   <meta charset="utf-8" />
-  <title>ESP32 MQTT Control (HiveMQ)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESP32 MQTT Dashboard</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;margin:20px;background:#f7f9fc;color:#222}
-    .card{background:#fff;padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.06);margin-bottom:12px}
-    button{padding:8px 12px;margin:6px;border-radius:6px;border:1px solid #ccc;background:#f0f0f0;cursor:pointer}
-    .on{background:#2ecc71;color:#fff;border-color:#27ae60}
-    .off{background:#e74c3c;color:#fff;border-color:#c0392b}
-    .tele {font-family:monospace;background:#fafafa;padding:8px;border-radius:6px}
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f5f7fb;
+      color: #222;
+      margin: 20px;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    button {
+      padding: 8px 14px;
+      margin: 5px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:hover { opacity: 0.85; }
+    .on { background: #2ecc71; color: #fff; }
+    .off { background: #e74c3c; color: #fff; }
+    .neutral { background: #3498db; color: #fff; }
+    .tele {
+      font-family: monospace;
+      background: #fafafa;
+      border-radius: 8px;
+      padding: 10px;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+    #status { font-weight: bold; }
   </style>
 </head>
+
 <body>
-  <h2>ESP32 — MQTT Control (HiveMQ)</h2>
+  <h2>ESP32 MQTT Dashboard (HiveMQ Secure 8884)</h2>
 
   <div class="card">
-    <strong>Connection</strong><br>
-    Broker: <code>broker.hivemq.com</code> (WebSocket ws://broker.hivemq.com:8884/mqtt)<br>
+    <strong>Koneksi</strong><br>
+    Broker: <code>wss://broker.hivemq.com:8884/mqtt</code><br>
     Client ID: <span id="cid">...</span><br>
     Status: <span id="status">disconnected</span>
   </div>
 
   <div class="card">
-    <strong>Controls (mirip Blynk)</strong><br>
-    <button id="pb1_on">PB1 ON</button>
-    <button id="pb1_off">PB1 OFF</button>
-    <button id="pb2">PB2 (cycle)</button>
-    <button id="pb3">PB3 (cycle)</button>
-    <button id="pln_on" class="on">PLN ON</button>
-    <button id="pln_off" class="off">PLN OFF</button>
+    <strong>Kontrol (sesuai Blynk)</strong><br>
+    <button id="pb1_on" class="on">PB1 ON</button>
+    <button id="pb1_off" class="off">PB1 OFF</button>
+    <button id="pb2" class="neutral">PB2</button>
+    <button id="pb3" class="neutral">PB3</button>
   </div>
 
   <div class="card">
-    <strong>Telemetry (updates)</strong>
-    <div class="tele" id="tele">menunggu data...</div>
+    <strong>Status PLN (dari Nano)</strong><br>
+    <div id="plnStatus" style="font-size:1.2em;font-weight:bold;color:#555;">
+      Menunggu data...
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>Data Telemetri</strong>
+    <div class="tele" id="tele">Menunggu data...</div>
   </div>
 
 <script>
-  // koneksi MQTT via WebSocket
-  const brokerUrl = 'ws://broker.hivemq.com:8000/mqtt';
-  const cid = 'web-' + Math.random().toString(16).substr(2,8);
-  document.getElementById('cid').textContent = cid;
+  // ====== Konfigurasi koneksi MQTT (HiveMQ TLS) ======
+  const brokerUrl = "wss://broker.hivemq.com:8884/mqtt";
+  const cid = "web-" + Math.random().toString(16).substr(2, 8);
+  document.getElementById("cid").textContent = cid;
 
   const client = mqtt.connect(brokerUrl, { clientId: cid });
 
-  const statusEl = document.getElementById('status');
-  const teleEl = document.getElementById('tele');
+  const statusEl = document.getElementById("status");
+  const teleEl = document.getElementById("tele");
+  const plnEl = document.getElementById("plnStatus");
 
-  client.on('connect', function () {
-    statusEl.textContent = 'connected';
-    // subscribe telemetry wildcard
-    client.subscribe('esp32/tele/#');
-    // optional subscribe ack
-    client.subscribe('esp32/ack/#');
+  client.on("connect", function () {
+    statusEl.textContent = "connected";
+    statusEl.style.color = "green";
+    // subscribe semua telemetry dari ESP32
+    client.subscribe("esp32/tele/#");
+    client.subscribe("esp32/ack/#");
   });
-  client.on('reconnect', () => statusEl.textContent = 'reconnecting...');
-  client.on('close', () => statusEl.textContent = 'disconnected');
-  client.on('error', (e) => { statusEl.textContent = 'error'; console.error(e); });
 
-  client.on('message', function (topic, payload) {
+  client.on("reconnect", () => {
+    statusEl.textContent = "reconnecting...";
+    statusEl.style.color = "orange";
+  });
+  client.on("close", () => {
+    statusEl.textContent = "disconnected";
+    statusEl.style.color = "red";
+  });
+  client.on("error", (err) => {
+    console.error("MQTT Error:", err);
+    statusEl.textContent = "error";
+    statusEl.style.color = "red";
+  });
+
+  // tampilkan pesan masuk
+  client.on("message", function (topic, payload) {
     const msg = payload.toString();
-    // tampilkan di panel tele
     const time = new Date().toLocaleTimeString();
-    teleEl.innerHTML = `<div>[${time}] ${topic} → ${msg}</div>` + teleEl.innerHTML;
+    teleEl.innerHTML =
+      `<div>[${time}] ${topic} → ${msg}</div>` + teleEl.innerHTML;
+
+    // update status PLN otomatis dari Nano (telemetri)
+    if (topic === "esp32/tele/PLN") {
+      if (msg === "1" || msg.toUpperCase() === "ON") {
+        plnEl.textContent = "PLN: ON";
+        plnEl.style.color = "green";
+      } else {
+        plnEl.textContent = "PLN: OFF";
+        plnEl.style.color = "red";
+      }
+    }
   });
 
-  // Actions: publish to esp32/cmd/...
+  // ====== Fungsi publish ke topic kontrol ======
   function publishCmd(sub, payload) {
-    client.publish('esp32/cmd/' + sub, payload.toString());
+    client.publish("esp32/cmd/" + sub, payload.toString());
   }
 
-  document.getElementById('pb1_on').addEventListener('click', () => {
-    publishCmd('V5','1'); // mirror BLYNK V5 ON -> PB1_ON
+  // ====== Tombol kontrol ======
+  document.getElementById("pb1_on").addEventListener("click", () => {
+    publishCmd("V5", "1"); // PB1_ON
   });
-  document.getElementById('pb1_off').addEventListener('click', () => {
-    publishCmd('V5','0'); // PB1_OFF
+  document.getElementById("pb1_off").addEventListener("click", () => {
+    publishCmd("V5", "0"); // PB1_OFF
   });
-  document.getElementById('pb2').addEventListener('click', () => {
-    publishCmd('V7','1'); // trigger PB2_ON (device cycles internal)
+  document.getElementById("pb2").addEventListener("click", () => {
+    publishCmd("V7", "1"); // PB2_ON
   });
-  document.getElementById('pb3').addEventListener('click', () => {
-    publishCmd('V6','1'); // trigger PB3_ON
+  document.getElementById("pb3").addEventListener("click", () => {
+    publishCmd("V6", "1"); // PB3_ON
   });
-  document.getElementById('pln_on').addEventListener('click', () => {
-    publishCmd('PLN','ON');
-  });
-  document.getElementById('pln_off').addEventListener('click', () => {
-    publishCmd('PLN','OFF');
-  });
-
 </script>
 </body>
 </html>
-
-
